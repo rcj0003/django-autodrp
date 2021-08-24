@@ -22,11 +22,10 @@ INSTALLED_APPS = [
   'yourapp'
 ]
 ```
-
-4. AutoDRP will now automatically configure the models to use DRY Rest Permissions
+3. AutoDRP will now automatically configure the models to use DRY Rest Permissions at runtime.
 
 # Using AutoDRP to configure DRY Rest Permissions
-***This assumes you have knowledge of using DRY Rest Permissions***
+***This assumes you have knowledge of using Django and DRY Rest Permissions***
 
 
 To get started with AutoDRP, add the following to your model you will be using DRY Rest Permissions for:
@@ -285,6 +284,16 @@ class Project(models.Model):
   }
 ```
 Now, admins can destroy a project, and projects cannot be deleted by non-admin and unauthenticated users.
+
+
+### Notes about AutoDRP
+In order to reduce redundant checks, AutoDRP automatically returns True for `has_object_permission` for checks such as ModelAttributeCheck. This is because using AutoDRPFilter as a filter backend should mean that whatever objects the user doesn't have permission will be filtered out already. For example, if one filters Project's queryset to only return active projects, checking to see if `project.is_active` would be redundant. If you are not using AutoDRPFilter, then, for example, ModelAttributeCheck takes a parameter named `enable_obj_permission` to check to see if the object has the same attributes it would've filtered for.
+
+
+For IsAuthenticated and IsAnonymous, they take a `filter` parameter when constructed that will use that check's `has_object_permission` if it exists. RequireAll will use `has_object_permission` for any checks that have it.
+
+
+If no checks have `has_object_permission` or `has_permission` (for their respective cases), then it is assumed that the user is allowed to do the action. This again assumes that the querysets will be filtered for the objects they have permission to see.
 
 
 # Final Notes

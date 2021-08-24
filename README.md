@@ -4,7 +4,26 @@ Automatically set-up filters and permissions for Django's DRY Rest Permissions
 # Getting Started
 1. Install AutoDRP
 2. Add 'django-autodrp' to your INSTALLED_APPS in your settings above all the apps you wish to use AutoDRP for (failing to add django-autodrp before the apps that will use it will result in the autoconfiguration of AutoDRP not running).
-3. AutoDRP will now automatically configure the models to use DRY Rest Permissions
+```python
+INSTALLED_APPS = [
+  # Django apps / packages
+  'all-django-apps',
+  # Your apps
+  'yourapp'
+]
+```
+
+```python
+INSTALLED_APPS = [
+  # Django apps / packages
+  'all-django-apps',
+  'autodrp', # <- Here
+  # Your apps
+  'yourapp'
+]
+```
+
+4. AutoDRP will now automatically configure the models to use DRY Rest Permissions
 
 # Using AutoDRP to configure DRY Rest Permissions
 ***This assumes you have knowledge of using DRY Rest Permissions***
@@ -83,7 +102,7 @@ class Project(models.Model):
   
   DRY_GLOBAL_PERMISSIONS = {
     'read': True,
-    'delete': False,
+    'destroy': False,
     ('write', 'create'): drp.AuthenticatedCheck(),
   }
 
@@ -110,7 +129,7 @@ class Project(models.Model):
   
   DRY_GLOBAL_PERMISSIONS = {
     'read': True,
-    'delete': False,
+    'destroy': False,
     ('write', 'create'): drp.AuthenticatedCheck(),
   }
 
@@ -133,7 +152,7 @@ class Project(models.Model):
   
   DRY_GLOBAL_PERMISSIONS = {
     'read': True,
-    'delete': False,
+    'destroy': False,
     ('write', 'create'): drp.AuthenticatedCheck(),
   }
 
@@ -151,3 +170,122 @@ The `RequireAll` check does exactly what it sounds like. It takes arguments for 
 
 
 `RequireAll` is generally useful for combining filters and permission checks.
+
+# Writing Your Own Checks
+Writing your own check is a rather straightforward process. A basic check should look something like this:
+```python
+class Check:
+  def has_permission(self, request):
+    return True
+   
+  def has_object_permission(self, request, obj):
+    return True
+
+  def filter(self, request, queryset):
+    return queryset
+```
+A check can omit any of those methods. Maybe you only want to check to see if a project is active, but not filter the projects. In that case, a check can be written with `has_permission` and `has_object_permission`, but excludes the `filter` method. You may find that writing a method for `has_object_permission` for a check like ModelAttributeCheck can be a hassle and might not be able to be done in an efficient manner. Or maybe you just would like to check to see if a user is authenticated, but not filter anything. Those are potential use cases of omitting some of the methods.
+
+
+In effect, this check would do nothing. Let's continue to work with the previous example and show how we can write a check that only allows active projects to be viewed by authenticated users:
+```python
+class ProjectVisibleCheck:
+  def has_permission(self, request):
+    return request.user.is_authenticated
+
+  def has_object_permission(self, request, project):
+    return project.is_active
+
+  def filter(self, request, queryset):
+    return queryset.filter(is_active=True)
+```
+Now, authenticated users can view active projects only. Now we can use our check in the configuration of AutoDRP like so:
+
+```python
+from autodrp import models as drp
+
+class ProjectVisibleCheck:
+  def has_permission(self, request):
+    return request.user.is_authenticated
+
+  def has_object_permission(self, request, project):
+    return project.is_active
+
+  def filter(self, request, queryset):
+    return queryset.filter(is_active=True)
+
+class Project(models.Model):
+  name = models.CharField(max_length=64)
+  is_active = models.BooleanField(default=True)
+  
+  DRY_GLOBAL_PERMISSIONS = {
+    'read': True,
+    'destroy': False,
+    ('write', 'create'): drp.AuthenticatedCheck(),
+  }
+
+  DRY_OBJECT_PERMISSIONS = {
+    'read': (
+      ProjectVisibleCheck(),
+      drp.ModelAttributeCheck(name__startswith='Public')
+    )
+  }
+```
+This essentially does the same thing as before, but the logic can now be reused in other places. In most cases, simply using the existing AutoDRP checks will suffice, but the functionality is there if you need it.
+
+
+However, maybe you have a custom instance of Django's user model and wanted to check to see if the account was an admin account. Let's assume the following is what we are using for our Django user account:
+```python
+class Account(AbstractBaseUser):
+    email = models.EmailField(blank=False, unique=True, max_length=64)
+    is_admin = models.BooleanField(default=False)
+    
+    USERNAME_FIELD = 'email'
+    EMAIL_FIELD = 'email'
+```
+Let's write a check that will give admins permission to destroy a project:
+```python
+class AdminCheck:
+  def has_permission(self, request):
+    return request.user.is_admin
+```
+Now we will add this check to the Project model:
+```python
+from autodrp import models as drp
+
+class AdminCheck:
+  def has_permission(self, request):
+    return request.user.is_admin
+
+class ProjectVisibleCheck:
+  def has_permission(self, request):
+    return request.user.is_authenticated
+
+  def has_object_permission(self, request, project):
+    return project.is_active
+
+  def filter(self, request, queryset):
+    return queryset.filter(is_active=True)
+
+class Project(models.Model):
+  name = models.CharField(max_length=64)
+  is_active = models.BooleanField(default=True)
+  
+  DRY_GLOBAL_PERMISSIONS = {
+    'read': True,
+    'destroy': AdminCheck(),
+    ('write', 'create'): drp.AuthenticatedCheck(),
+  }
+
+  DRY_OBJECT_PERMISSIONS = {
+    'read': (
+      ProjectVisibleCheck(),
+      drp.ModelAttributeCheck(name__startswith='Public')
+    )
+  }
+```
+Now, admins can destroy a project, and projects cannot be deleted by non-admin and unauthenticated users.
+
+
+# Final Notes
+I've found DRY Rest Permissions to be a great asset but rather verbose. I hope to make working with DRY Rest Permissions easier by consolidating filter and permission functionality into a simple and terse feature.

@@ -3,7 +3,7 @@ Automatically set-up filters and permissions for Django's DRY Rest Permissions
 
 # Getting Started
 1. Install AutoDRP
-2. Add 'django-autodrp' to your INSTALLED_APPS in your settings above all the apps you wish to use AutoDRP for (failing to add django-autodrp before the apps that will use it will result in the autoconfiguration of AutoDRP not running).
+2. Add 'django-autodrp' to your INSTALLED_APPS in your settings below all the apps you wish to use AutoDRP for (failing to add django-autodrp after the apps that will use it will result in the autoconfiguration of AutoDRP not running).
 ```python
 INSTALLED_APPS = [
   # Django apps / packages
@@ -17,9 +17,9 @@ INSTALLED_APPS = [
 INSTALLED_APPS = [
   # Django apps / packages
   'all-django-apps',
-  'autodrp', # <- Here
   # Your apps
-  'yourapp'
+  'yourapp',
+  'autodrp', # <- Here
 ]
 ```
 3. AutoDRP will now automatically configure the models to use DRY Rest Permissions at runtime.
@@ -79,6 +79,7 @@ This functionality is not the only functionality offered by AutoDRP. AutoDRP wil
 ```python
 class ProjectViewSet(viewsets.ModelViewset):
   queryset = Project.objects.all()
+  permission_classes = (DRYPermissions,)
 ```
 This viewset has the basic actions, like list, retrieve, etc. because it is a ModelViewset. Right now, a user would theoretically be able to see every Project via the `list` endpoint, but when calling the `retrieve` endpoint, you would get a 403 Unauthorized for projects that aren't active. Let's fix this using AutoDRP's other feature, which is filtering.
 ```python
@@ -86,9 +87,12 @@ from autodrp.filters import AutoDRPFilter
 
 class ProjectViewSet(viewsets.ModelViewset):
   queryset = Project.objects.all()
+  permission_classes = (DRYPermissions,)
   filter_backends = [AutoDRPFilter]
 ```
 Now, when you visit the `list` endpoint for the `ProjectViewSet`, only active projects will be listed.
+
+**Notes** Be sure to include `write` and `read` at a minimum, or DRY Rest Permissions may have issues.
 
 ### Next Steps
 Let's take this a little further. Let's assume that we want users to be able to see all projects if they are authenticated, only active projects if they are not authenticated, to disable deletion of all projects, and to allow updating of a project if authenticated. We can achieve this like so:

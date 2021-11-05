@@ -1,5 +1,7 @@
 from django.db.models import Q
 
+from .checks import QueryBuilderCheck
+
 
 class EvalArgument:
     def __init__(self, eval_string, *required_keywords):
@@ -136,6 +138,9 @@ class QueryBuilder:
     def filter_against(self, queryset, **kwargs):
         q_obj = self.build(**kwargs)
         return queryset.filter(q_obj)
+    
+    def to_check(self):
+        return QueryBuilderCheck(self)
 
 class filter_keyword_args:
     def __init__(self, function, *keywords):

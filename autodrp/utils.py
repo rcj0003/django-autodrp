@@ -1,89 +1,157 @@
-from django.db.models.signals import class_prepared
-from django.dispatch import receiver
+from django.db.models import Q
 
-ALWAYS_TRUE = lambda *args, **kwargs: True
 
-class CheckPermissions:
-    def __init__(self, *checks):
-        self.checks = checks
+class EvalArgument:
+    def __init__(self, eval_string, *required_keywords):
+        self._compiled_eval = compile(f'return {eval_string}', '<string>', 'eval')
+        self.required_keywords = required_keywords
     
-    def __call__(self, request):
-        for permission in self.checks:
-            if permission.has_permission(request):
-                return True
-        return False
+    def _validate_kwargs(self, kwargs):
+        for keyword in self.required_keywords:
+            if keyword not in kwargs:
+                raise Exception(f'Missing keyword argument {keyword}.')
 
-class CheckObjectPermissions:
-    def __init__(self, *checks):
-        self.checks = checks
+    def __call__(self, **kwargs):
+        self._validate_kwargs(kwargs)
+        return eval(self._compiled_eval, globals={}, locals=kwargs)
+
+class QueryBuilder:
+    @staticmethod
+    def where(**kwargs):
+        return QueryBuilder().and_where(**kwargs)
+
+    def __init__(self):
+        self._query = []
+        self._cached_q = None
+
+    def _compile_and(q_obj=None, compiled_q=None, **kwargs):
+        if not compiled_q:
+            compiled_q = Q(**kwargs)
+
+        if q_obj:
+            return q_obj & compiled_q
+        return compiled_q
+
+    def _compile_and_not(q_obj=None, compiled_q=None, **kwargs):
+        if not compiled_q:
+            compiled_q = Q(**kwargs)
+
+        if q_obj:
+            return q_obj & ~compiled_q
+        return compiled_q
+
+    def _compile_or(q_obj=None, compiled_q=None, **kwargs):
+        if not compiled_q:
+            compiled_q = Q(**kwargs)
+
+        if q_obj:
+            return q_obj | compiled_q
+        return compiled_q
+
+    def _compile_or_not(q_obj=None, compiled_q=None, **kwargs):
+        if not compiled_q:
+            compiled_q = ~Q(**kwargs)
+
+        if q_obj:
+            return q_obj | compiled_q
+        return compiled_q
     
-    def __call__(self, obj, request):
-        for permission in self.checks:
-            if permission.has_object_permission(request, obj):
-                return True
-        return False
+    def _compile_xor(q_obj=None, compiled_q=None, **kwargs):
+        if not compiled_q:
+            arg1, arg2 = kwargs.items()
+            arg1, arg2 = {arg1[0]: arg1[1]}, {arg2[0]: arg2[1]}
+            compiled_q = (Q(**arg1) and ~Q(**arg2)) | (Q(**arg2) and ~Q(**arg1))
 
-class Filter:
-    def __init__(self, *checks):
-        self.checks = checks
+        if q_obj:
+            return q_obj & compiled_q
+
+        return compiled_q
     
-    def __call__(self, request, queryset):
-        for filter in self.checks:
-            if hasattr(filter, 'has_permission') and not filter.has_permission(request):
-                continue
+    def _compile_args(self, operation_kwargs, **kwargs):
+        compiled_kwargs = {key: value if not callable(value) else value(**kwargs) for key, value in operation_kwargs.items()}
+        return compiled_kwargs
 
-            queryset, filtered = filter.filter(request, queryset)
-            
-            if filtered:
-                break
+    def _add_operation(self, operation, **kwargs):
+        if not any(callable(value) for value in kwargs.values()):
+            self._query.append({
+                'operation': operation,
+                'cached': operation(**kwargs)
+            })
+            return
+
+        ignore_no_args_eval = kwargs.pop('ignore_no_args_eval', False)
+        self._query.append({
+            'operand': operation,
+            'ignore_none_args': ignore_no_args_eval,
+            'kwargs': kwargs
+        })
+     
+    def and_where(self, **kwargs):
+        self._add_operation(self._compile_and, **kwargs)
+        return self
+
+    def and_not_where(self, **kwargs):
+        self._add_operation(self._compile_and_not, **kwargs)
+        return self
         
-        return queryset
+    def or_where(self, **kwargs):
+        self._add_operation(self._compile_or, **kwargs)
+        return self
+    
+    def or_not_where(self, **kwargs):
+        self._add_operation(self._compile_or_not, **kwargs)
+        return self
+    
+    def where_one_not_both(self, **kwargs):
+        if len(kwargs) != 2:
+            raise Exception('XOR requires ONLY a left and right operand (2 keyword arguments required)')
+        self._add_operation(self._compile_xor, **kwargs)
+        return self
+    
+    def build(self, do_cache=False, ignore_cache=False, **kwargs):
+        if self._cached_q and not ignore_cache:
+            return self._cached_q
 
-def _bake_global_permissions(sender, permission_data):
-    for actions, check_data in permission_data.items():
-        if not hasattr(check_data, '__iter__'):
-            check_data = [check_data]
+        should_cache = True
+        q_obj = None
+
+        for operation in self._query:
+            operation_func = operation['operation']
+            compiled_q = operation.get('cached')
+
+            if not compiled_q:
+                should_cache = False
+                op_kwargs = self._compile_args(**kwargs)
+                if len(op_kwargs) == 0 and operation['ignore_none_args']:
+                    continue
+                q_obj = operation_func(q_obj=q_obj, **op_kwargs)
+            else:
+                q_obj = operation_func(q_obj=q_obj, compiled_q=compiled_q)
         
-        checks = [check for check in check_data if hasattr(check, 'has_permission')]
-        actions = [actions] if isinstance(actions, str) else actions
+        if should_cache or do_cache:
+            self._cached_q = q_obj
 
-        if len(checks) > 0:
-            permission_function = staticmethod(CheckPermissions(*checks))
-        else:
-            permission_function = staticmethod(ALWAYS_TRUE)
+        return q_obj
+    
+    def filter_against(self, queryset, **kwargs):
+        q_obj = self.build(**kwargs)
+        return queryset.filter(q_obj)
 
-        for action in actions:
-            setattr(sender, f'has_{action}_permission', permission_function)
+class filter_keyword_args:
+    def __init__(self, function, *keywords):
+        self.function = function
+        self.keywords = keywords
+        self.keyword_count = len(keywords)
+    
+    def __call__(self, *args, **kwargs):
+        if len(kwargs) == 0 and len(args) == self.keyword_count:
+            return self.function(*args)
 
-def _bake_object_permissions(sender, permission_data):
-    for actions, check_data in permission_data.items():
-        if not hasattr(check_data, '__iter__') and not isinstance(check_data, str):
-            check_data = [check_data]
+        values = []
+        for key in self.keywords:
+            value = kwargs.get(key)
+            if not value:
+                raise Exception(f'Missing keyword argument {key}.')
+            values.append(value)
         
-        checks = [check for check in check_data if hasattr(check, 'has_object_permission')]
-        filters = [check for check in check_data if hasattr(check, 'filter')]
-        actions = [actions] if isinstance(actions, str) else actions
-
-        if len(checks) > 0:
-            permission_function = CheckPermissions(*checks)
-        else:
-            permission_function = ALWAYS_TRUE
-
-        for action in actions:
-            setattr(sender, f'has_object_{action}_permission', permission_function)
-        
-        if len(filters) > 0:
-            filter_function = staticmethod(Filter(*filters))
-            for action in actions:
-                setattr(sender, f'filter_for_{action}', filter_function)
-
-def bake_permissions(sender):
-    if hasattr(sender, '_bake_permission_data'):
-        _bake_global_permissions(sender, sender._bake_permission_data())
-    elif hasattr(sender, 'DRY_GLOBAL_PERMISSIONS'):
-        _bake_global_permissions(sender, sender.DRY_GLOBAL_PERMISSIONS)
-
-    if hasattr(sender, '_bake_object_permission_data'):
-        _bake_object_permissions(sender, sender._bake_object_permission_data())
-    elif hasattr(sender, 'DRY_OBJECT_PERMISSIONS'):
-        _bake_object_permissions(sender, sender.DRY_OBJECT_PERMISSIONS)
+        return self.function(*values)

@@ -50,5 +50,7 @@ class ProjectViewSet(viewsets.ModelViewset):
 ```
 5. You now are using AutoDRP permissions and filters.
 
+Consult the wiki for a definitive tutorial and explanation of AutoDRP.
+
 # Motivation for this project
 I've found DRY Rest Permissions to be a great asset but rather verbose. I hope to make working with DRY Rest Permissions easier by consolidating filter and permission functionality into a simple and terse feature.

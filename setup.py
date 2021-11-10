@@ -7,7 +7,7 @@ with open('README.md', 'r') as file:
 
 setuptools.setup(
     name='django-autodrp',
-    version=os.environ.get('version'),
+    version=os.environ.get('package_version'),
     author='rcj0003',
     url='https://github.com/rcj0003/django-autodrp',
     description='Automatically set-up filters and permissions for Django\'s DRY Rest Permissions',

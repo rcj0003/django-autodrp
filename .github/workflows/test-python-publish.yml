@@ -3,6 +3,11 @@ name: Upload Python Package (Test)
 on:
   push:
     branches: [ dev ]
+  workflow_dispatch:
+    inputs:
+      reason:
+        required: false
+        default: 'Testing publishing'
 
 jobs:
   build-release:

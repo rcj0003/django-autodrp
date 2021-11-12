@@ -1,8 +1,6 @@
 name: Upload Python Package (Test)
 
 on:
-  push:
-    branches: [ dev ]
   workflow_dispatch:
     inputs:
       reason:

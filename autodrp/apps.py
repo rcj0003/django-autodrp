@@ -1,7 +1,7 @@
 import django.apps
 from django.apps import AppConfig
 
-from autodrp.utils import bake_permissions
+from ._baking import bake_permissions
 
 
 class AutoDRPConfig(AppConfig):

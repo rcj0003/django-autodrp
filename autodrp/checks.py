@@ -58,6 +58,16 @@ class ModelAttributeCheck:
             queryset, filtered = _filter.filter(request, queryset)
         return queryset, True
 
+class QueryBuilderCheck:
+    def __init__(self, query_builder):
+        self.query_builder = query_builder
+
+    def has_permission(self, request):
+        return True
+    
+    def filter(self, request, queryset):
+        return queryset.filter(self.query_builder.build(request=request))
+
 class IsAuthenticated:
     def __init__(self, filter=None):
         self._filter = filter

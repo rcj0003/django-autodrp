@@ -8,6 +8,8 @@ on:
       reason:
         required: false
         default: 'Testing publishing'
+      package_version:
+        required: True
         
 jobs:
   build-release:
@@ -25,7 +27,7 @@ jobs:
     - name: Build package
       run: python -m build
       env:
-        package_version: 'v0.1.0-beta'
+        package_version: ${{ inputs.package_version }}
     - name: Publish package
       uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
       with:

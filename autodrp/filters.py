@@ -24,3 +24,16 @@ class AutoDRPFilter(BaseFilterBackend):
                 queryset, filtered = self._do_filter(request, 'write', queryset)
 
         return queryset
+
+class AutoDRPSerializerFilter(BaseFilterBackend):
+    def filter_queryset(self, request, queryset, view):
+        serializer_class = view.get_serializer_class()
+        meta = getattr(serializer_class, 'Meta', None)
+
+        if meta:
+            if hasattr(meta, 'filter'):
+                return meta.filter(request, queryset)
+            else:
+                return queryset.none()
+
+        return queryset

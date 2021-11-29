@@ -1,6 +1,3 @@
-from django.db.models import Q
-
-
 class TestCheck:
     def __init__(self, parent_check=None):
         self.parent_check = parent_check

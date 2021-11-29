@@ -1,7 +1,7 @@
 import django.apps
 from django.apps import AppConfig
 
-from autodrp.utils import bake_permissions
+from ._baking import bake_class_permissions
 
 
 class AutoDRPConfig(AppConfig):
@@ -9,4 +9,4 @@ class AutoDRPConfig(AppConfig):
 
     def ready(self):
         for model in django.apps.apps.get_models():
-            bake_permissions(model)
+            bake_class_permissions(model)
